@@ -26,6 +26,7 @@
 /**********************************************************************/
 const char* ssid = "enter_your_ssid";
 const char* password = "enter_your_password";
+#define TEST_WIFI_SIGNAL true
 // Activate AP mode AP (Access point). User need to connect directly to ESP32 wifi network to access video stream
 // Active le mode AP (Access point). L'ESP32-CAM n'est pas connectée au WiFi, on se connecte directement sur la caméra
 #define AP_MODE false
@@ -87,32 +88,38 @@ const char index_html[] PROGMEM = R"=====(
     .rightcol {
       flex: 70%;
     }
+    .button {
+      width: 60px;
+      height: 40px;
+      color: white;
+      font-size: 22px;
+      background-color: #1acc59;
+      border-color: transparent;
+      border-radius: 8px
+    }
   </style>
 </head>
 <body>
-  <div class="row">
-    <div class="leftcol">
-      <h2>ESP32-CAM Stream Server</h2>
-      <p>
+    <h2>ESP32-CAM Stream Server</h2>
+    <div style="width:400px ; height:450px">
+      <img id="stream" style="margin-top: 50px; width:400px" src="http://%s/stream"></img>
+    </div>
+    <div>
         <h4>Rotate Image</h4> 
-        <button onclick="rotateLeft()">&#171;</button>
-        <button onclick="rotateRight()">&#187;</button>
-      </p>
-      <p>Use only HTML + CSS</p>
-    </div>
-    <div class="rightcol">
-      <img id="stream" style="width:400px" src='http://%s/stream'/>
-    </div>
-  </div>
+        <button class="button" onclick="rotateLeft()">&#171;</button>
+        <button class="button" onclick="rotateRight()">&#187;</button>
+    </div>    
 </body>
 <script>
   var deg = 0;
   function rotateLeft() {
     deg -= 90;
+    if ( deg <0 ) deg = 360;
     console.log("Rotate image to left");
     document.getElementById("stream").style.transform = 'rotate(' + deg + 'deg)';
   }function rotateRight() {
     deg += 90;
+    if ( deg > 360 ) deg = 0;
     console.log("Rotate image to right");
     document.getElementById("stream").style.transform = 'rotate(' + deg + 'deg)';
   }
@@ -197,13 +204,13 @@ static esp_err_t web_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
   httpd_resp_set_hdr(req, "Content-Encoding", "identity");
 
-  int indexhtmlsize = sizeof(index_html);
+  int indexhtmlsize = sizeof(index_html) + 50;
   char indexpage[indexhtmlsize] = "";
-  strcat(indexpage, index_html);
+  //strcat(indexpage, index_html);
   char streamip[20] = "";
   
   if ( AP_MODE ) {
-    // En mode AP (connexion directe à l'ESP32-CAM), l'IP est toujours 192.168.4.1
+    // In AP Mode, IP is always 192.168.4.1
     // En mode AP (connexion directe à l'ESP32-CAM), l'IP est toujours 192.168.4.1
     sprintf(streamip, "192.168.4.1:%d", port_number);
   } else {
@@ -241,7 +248,7 @@ void startCameraServer() {
   };
 
   // Démarre le serveur web de l'interface HTML accessible depuis le navigateur internet
-  Serial.printf("Web server started on ort: '%d'\n", config.server_port);
+  Serial.printf("Web server started on port: '%d'\n", config.server_port);
   if (httpd_start(&camera_httpd, &config) == ESP_OK) {
     httpd_register_uri_handler(camera_httpd, &index_uri);
   }
@@ -305,9 +312,9 @@ void setup() {
     FRAMESIZE_QXGA,     // 2048*1536
   */
   if(psramFound()){
-    config.frame_size = FRAMESIZE_UXGA; // 1600x1200
+    config.frame_size = FRAMESIZE_UXGA; //FRAMESIZE_UXGA; // 1600x1200
     config.jpeg_quality = 10;
-    config.fb_count = 2;
+    config.fb_count = 1; // Si > 1, active le bus I2S
   } else {
     config.frame_size = FRAMESIZE_SVGA; // 800x600 
     config.jpeg_quality = 12;
@@ -326,7 +333,7 @@ void setup() {
   }
 
   if ( AP_MODE ) {
-    // En mode AP, on se connecte directement au réseau WiFi de l'ESP32 à l'adresse http://192.168.4.1
+    // In AP Mode, connect to http://192.168.4.1
     // En mode AP, on se connecte directement au réseau WiFi de l'ESP32 à l'adresse http://192.168.4.1
     /* ACCESS POINT PARAMETERS
       ap_ssid (defined earlier): maximum of 63 characters
@@ -362,9 +369,27 @@ void setup() {
     Serial.println("WiFi connected");
   }
 
-  Serial.print("Camera Ready! Use 'http://");
+  // La caméra est prête, ouvrez votre navigateur à l'adresse suivante
+  Serial.print("Camera Ready! Open your browser at 'http://");
+  
   Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  Serial.println("");
+  
+  // Test WiFi signal quality
+  // Test la qualité du réseau WiFi
+  if ( TEST_WIFI_SIGNAL ){
+    long logrssi = 0 ;
+    for (size_t i = 0; i < 10; i++)
+    {
+      long rssi = WiFi.RSSI();
+      logrssi = logrssi + rssi;
+      Serial.printf("measured rssi = %d dBm \n", WiFi.RSSI());
+      delay(200);
+    }
+    
+    Serial.printf("Mean rssi = %0.1d dBm \n", logrssi / 10);
+  }
+
 
   // Start web server and MJPEG stream
   // Démarrer le serveur web et le flux vidéo MJPEG
